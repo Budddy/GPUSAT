@@ -17,14 +17,13 @@ A SAT solver based on dynamic programming running on the GPU.
 
 ### Compilation
 
-To build the program with normal double precision use `cmake -Ddouble=ON` and the `make`, to build with double4 precision use `cmake` and the `make
-The double4 Type is an adaption of [https://github.com/scibuilder/QD]
+To build the program use `cmake` and the `make`.
 
 ## Usage
 
 First one needs the generate the primal, incidence or dual graph of the formula and generate the tree decomposition of the graph with a decomposer such as htd [https://github.com/mabseher/htd].
 
-`gpusat [-f <treedecomp>] -s <formula> [-w <width>] [-m <size>] [-c <kerneldir>] [-h]`
+`gpusat [-f <treedecomp>] -s <formula> [-w <width>] [-m <size>] [-c <kerneldir>] [-h] [--weighted]`
 
 The tree decomposition can either be provided via file or via input stream.
 
