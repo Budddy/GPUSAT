@@ -30,17 +30,19 @@ int main(int argc, char *argv[]) {
     int combineWidth = 12, maxBag = 22;
     std::string kernelPath = "./kernel/";
     graphTypes graph = NONE;
-    bool factR, cpu, weighted;
+    bool factR, cpu, weighted, nvidia, amd;
     CLI::App app{};
 
     std::string filename = "default";
     app.add_option("-s,--formula", formulaDir, "path to the file containing the sat formula")->required();
     app.add_option("-f,--decomposition", decompDir, "path to the file containing the tree decomposition")->set_default_str("");
-    app.add_option("-w,--combineWidth", combineWidth, "maximum width to combine bags of the decomposition")->set_default_str("10");
-    app.add_option("-m,--maxBagSize", maxBag, "max size of a bag on the gpu")->set_default_str("24");
+    app.add_option("-w,--combineWidth", combineWidth, "maximum width to combine bags of the decomposition")->set_default_str("14");
+    app.add_option("-m,--maxBagSize", maxBag, "max size of a bag on the gpu")->set_default_str("26");
     app.add_option("-c,--kernelDir", kernelPath, "directory containing the kernel files")->set_default_str("./kernel/");
     app.add_flag("--noFactRemoval", factR, "deactivate fact removal optimization");
     app.add_flag("--CPU", cpu, "run the solver on the gpu");
+    app.add_flag("--NVIDIA", nvidia, "run the solver on an NVIDIA device");
+    app.add_flag("--AMD", amd, "run the solver on an AMD device");
     app.add_flag("--weighted", weighted, "use weighted model count");
 
 
@@ -138,6 +140,19 @@ int main(int argc, char *argv[]) {
         cl::Platform::get(&platforms);
         std::vector<cl::Platform>::iterator iter;
         for (iter = platforms.begin(); iter != platforms.end(); ++iter) {
+            if (nvidia && amd) {
+                if (strcmp((*iter).getInfo<CL_PLATFORM_VENDOR>().c_str(), "NVIDIA Corporation") && strcmp((*iter).getInfo<CL_PLATFORM_VENDOR>().c_str(), "Advanced Micro Devices, Inc.")) {
+                    continue;
+                }
+            } else if (nvidia) {
+                if (strcmp((*iter).getInfo<CL_PLATFORM_VENDOR>().c_str(), "NVIDIA Corporation")) {
+                    continue;
+                }
+            } else if (amd) {
+                if (strcmp((*iter).getInfo<CL_PLATFORM_VENDOR>().c_str(), "Advanced Micro Devices, Inc.")) {
+                    continue;
+                }
+            }
             cl_context_properties cps[3] = {CL_CONTEXT_PLATFORM, (cl_context_properties) (*iter)(), 0};
             if (cpu) {
                 context = cl::Context(CL_DEVICE_TYPE_CPU, cps);
