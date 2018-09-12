@@ -7,7 +7,7 @@
 #include <gpusatpreprocessor.h>
 
 namespace gpusat {
-    void Preprocessor::preprocessDecomp(preebagType *decomp, cl_long combineWidth) {
+    void Preprocessor::preprocessDecomp(bagType *decomp, cl_long combineWidth) {
 
         bool changed = true;
         // try to merge child nodes
@@ -29,8 +29,8 @@ namespace gpusat {
                             cl_long cid = decomp->edges[b]->id;
                             decomp->edges[a]->variables.assign(v.begin(), v.end());
 
-                            std::vector<preebagType *> v_(static_cast<unsigned long long int>(decomp->edges[a]->edges.size() + decomp->edges[b]->edges.size()));
-                            std::vector<preebagType *>::iterator it_;
+                            std::vector<bagType *> v_(static_cast<unsigned long long int>(decomp->edges[a]->edges.size() + decomp->edges[b]->edges.size()));
+                            std::vector<bagType *>::iterator it_;
                             it_ = std::set_union(decomp->edges[a]->edges.begin(), decomp->edges[a]->edges.end(), decomp->edges[b]->edges.begin(),
                                                  decomp->edges[b]->edges.end(), v_.begin(), compTreedType);
                             v_.resize(static_cast<unsigned long long int>(it_ - v_.begin()));
@@ -60,14 +60,14 @@ namespace gpusat {
                         cl_long cid = decomp->edges[i]->id;
                         decomp->variables.assign(v.begin(), v.end());
 
-                        std::vector<preebagType *> v_(static_cast<unsigned long long int>(decomp->edges.size() + decomp->edges[i]->edges.size()));
-                        std::vector<preebagType *>::iterator it_;
+                        std::vector<bagType *> v_(static_cast<unsigned long long int>(decomp->edges.size() + decomp->edges[i]->edges.size()));
+                        std::vector<bagType *>::iterator it_;
                         it_ = std::set_union(decomp->edges.begin(), decomp->edges.end(), decomp->edges[i]->edges.begin(), decomp->edges[i]->edges.end(), v_.begin(),
                                              compTreedType);
                         v_.resize(static_cast<unsigned long long int>(it_ - v_.begin()));
-                        decomp->edges.clear();
+                        decomp->edges.resize(0);
                         for (int asdf = 0, x = 0; x < v_.size(); asdf++, x++) {
-                            preebagType *&sdggg = v_[asdf];
+                            bagType *&sdggg = v_[asdf];
                             if (v_[asdf]->id == cid) {
                                 x++;
                             }
@@ -84,19 +84,20 @@ namespace gpusat {
         for (int i = 0; i < decomp->edges.size(); i++) {
             preprocessDecomp((decomp->edges)[i], combineWidth);
         }
+        //std::sort(decomp->variables.begin(), decomp->variables.end());
 
         for (int i = 0; i < decomp->edges.size(); i++) {
             std::vector<cl_long> fVars;
             std::set_intersection(decomp->variables.begin(), decomp->variables.end(), decomp->edges[i]->variables.begin(), decomp->edges[i]->variables.end(),
                                   std::back_inserter(fVars));
             unsigned long long int numForgetVars = (decomp->edges[i]->variables.size() - fVars.size());
-            if (numForgetVars >= 4) {
-                preebagType *newEdge = new preebagType;
+            if (numForgetVars > 4) {
+                bagType *newEdge = new bagType;
                 newEdge->variables.insert(newEdge->variables.end(), fVars.begin(), fVars.end());
-                fVars.clear();
+                fVars.resize(0);
                 std::set_difference(decomp->edges[i]->variables.begin(), decomp->edges[i]->variables.end(), decomp->variables.begin(), decomp->variables.end(),
                                     std::back_inserter(fVars));
-                newEdge->variables.insert(newEdge->variables.end(), fVars.begin(), fVars.begin() + numForgetVars - 3);
+                newEdge->variables.insert(newEdge->variables.end(), fVars.begin(), fVars.begin() + numForgetVars - 4);
                 newEdge->edges.push_back(decomp->edges[i]);
                 decomp->edges[i] = newEdge;
                 std::sort(newEdge->variables.begin(), newEdge->variables.end());
@@ -110,7 +111,7 @@ namespace gpusat {
 
     }
 
-    void Preprocessor::preprocessFacts(preetreedecType decomp, satformulaType &formula, graphTypes gType, cl_double &defaultWeight) {
+    void Preprocessor::preprocessFacts(treedecType &decomp, satformulaType &formula, graphTypes gType, cl_double &defaultWeight) {
         for (cl_long i = 0; i < formula.facts.size(); i++) {
             cl_long fact = formula.facts[i];
             for (cl_long a = 0; a < formula.clauses.size(); a++) {
@@ -119,10 +120,10 @@ namespace gpusat {
                     if (*elem == (fact)) {
                         //remove clause from formula
                         formula.clauses.erase(formula.clauses.begin() + a);
-                        if (gType == INCIDENCE || (gType == NONE && (formula.numVars + formula.clauses.size() == decomp.numVars))) {
+                        if (gType == INCIDENCE) {
                             relableDecomp(&decomp.bags[0], a + formula.numVars + 1);
                             decomp.numVars--;
-                        } else if (gType == DUAL || (gType == NONE && (formula.clauses.size() == decomp.numVars))) {
+                        } else if (gType == DUAL) {
                             relableDecomp(&decomp.bags[0], a);
                             decomp.numVars--;
                         }
@@ -153,7 +154,7 @@ namespace gpusat {
                     }
                 }
             }
-            if (gType != DUAL && !(gType == NONE && (formula.clauses.size() == decomp.numVars))) {
+            if (gType != DUAL) {
                 relableDecomp(&decomp.bags[0], std::abs(fact));
             }
             decomp.numVars--;
@@ -176,7 +177,7 @@ namespace gpusat {
     }
 
 
-    void Preprocessor::relableDecomp(preebagType *decomp, cl_long id) {
+    void Preprocessor::relableDecomp(bagType *decomp, cl_long id) {
         for (int i = 0; i < decomp->variables.size(); i++) {
             if (decomp->variables[i] > id) {
                 decomp->variables[i]--;

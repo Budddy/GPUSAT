@@ -68,6 +68,18 @@ namespace gpusat {
 
         cl_double defaultWeight = 1.0;
         int combineWidth;
+        cl_long preWidth = 0;
+        cl_long postWidth = 0;
+        cl_long preCut = 0;
+        cl_long postCut = 0;
+        cl_long preJoinSize = 0;
+        cl_long postJoinSize = 0;
+        cl_long preNumBags = 0;
+        cl_long postNumBags = 0;
+
+        void iterateDecompPre(bagType &bag);
+
+        void iterateDecompPost(bagType &bag);
 
     private:
         bool factR;
@@ -87,7 +99,7 @@ namespace gpusat {
          * @param item      the line
          * @param edges     queue containing all edges
          */
-        void parseStartLine(preetreedecType &ret, std::string &item, std::vector<std::vector<cl_long>> &edges);
+        void parseStartLine(treedecType &ret, std::string &item, std::vector<std::vector<cl_long>> &edges);
 
         /**
          * parses a pag from the tree decomposition
@@ -95,7 +107,7 @@ namespace gpusat {
          * @param ret       object containing the tree decomposition
          * @param item      a line from the decomposition
          */
-        void parseBagLine(preetreedecType &ret, std::string item);
+        void parseBagLine(treedecType &ret, std::string item);
 
         static void removeEdges(std::vector<std::vector<cl_long>> &node, cl_long id, cl_long preID);
     };

@@ -14,6 +14,7 @@
 #include <solver.h>
 #include <CLI11.hpp>
 #include <boost/multiprecision/cpp_bin_float.hpp>
+#include <gpusatpreprocessor.h>
 
 using namespace gpusat;
 
@@ -40,7 +41,7 @@ int main(int argc, char *argv[]) {
     app.add_option("-m,--maxBagSize", maxBag, "max size of a bag on the gpu")->set_default_str("26");
     app.add_option("-c,--kernelDir", kernelPath, "directory containing the kernel files")->set_default_str("./kernel/");
     app.add_flag("--noFactRemoval", factR, "deactivate fact removal optimization");
-    app.add_flag("--CPU", cpu, "run the solver on the gpu");
+    app.add_flag("--CPU", cpu, "run the solver on the cpu");
     app.add_flag("--NVIDIA", nvidia, "run the solver on an NVIDIA device");
     app.add_flag("--AMD", amd, "run the solver on an AMD device");
     app.add_flag("--weighted", weighted, "use weighted model count");
@@ -84,28 +85,6 @@ int main(int argc, char *argv[]) {
     satformulaType satFormula = cnfParser.parseSatFormula(sat.str());
     //parse the tree decomposition
     treedecType treeDecomp = tdParser.parseTreeDecomp(treeD.str(), satFormula, graph);
-    //found unsat during preprocessing
-    if (satFormula.unsat) {
-        std::cout << "{\n    \"Model Count\": " << 0;
-        time_total = getTime() - time_total;
-        std::cout << "\n    ,\"Time\":{";
-        std::cout << "\n        \"Solving\": " << 0;
-        std::cout << "\n        ,\"Parsing\": " << ((float) time_parsing) / 1000;
-        std::cout << "\n        ,\"Build_Kernel\": " << 0;
-        std::cout << "\n        ,\"Generate_Model\": " << 0;
-        std::cout << "\n        ,\"Init_OpenCL\": " << 0;
-        std::cout << "\n        ,\"Total\": " << ((float) time_total) / 1000;
-        std::cout << "\n    }";
-        std::cout << "\n    ,\"Statistics\":{";
-        std::cout << "\n        \"Num Join\": " << 0;
-        std::cout << "\n        ,\"Num Forget\": " << 0;
-        std::cout << "\n        ,\"Num Introduce\": " << 0;
-        std::cout << "\n        ,\"Num Leaf\": " << 0;
-        std::cout << "\n    }";
-        std::cout << "\n}";
-        exit(20);
-
-    }
 
     if (satFormula.clauses.size() == satFormula.numVars && satFormula.numVars == treeDecomp.numVars) {
         if (isPrimalGraph(&satFormula, &treeDecomp)) {
@@ -126,6 +105,36 @@ int main(int argc, char *argv[]) {
         std::cerr << "Error: Unknown graph type\n";
         exit(EXIT_FAILURE);
     }
+
+    // remove facts form decomp and formula
+    if (!factR) {
+        Preprocessor::preprocessFacts(treeDecomp, satFormula, graph, tdParser.defaultWeight);
+        if (satFormula.unsat) {
+            std::cout << "{\n    \"Model Count\": " << 0;
+            time_total = getTime() - time_total;
+            std::cout << "\n    ,\"Time\":{";
+            std::cout << "\n        \"Solving\": " << 0;
+            std::cout << "\n        ,\"Parsing\": " << ((float) time_parsing) / 1000;
+            std::cout << "\n        ,\"Build_Kernel\": " << 0;
+            std::cout << "\n        ,\"Generate_Model\": " << 0;
+            std::cout << "\n        ,\"Init_OpenCL\": " << 0;
+            std::cout << "\n        ,\"Total\": " << ((float) time_total) / 1000;
+            std::cout << "\n    }";
+            std::cout << "\n    ,\"Statistics\":{";
+            std::cout << "\n        \"Num Join\": " << 0;
+            std::cout << "\n        ,\"Num Forget\": " << 0;
+            std::cout << "\n        ,\"Num Introduce\": " << 0;
+            std::cout << "\n        ,\"Num Leaf\": " << 0;
+            std::cout << "\n    }";
+            std::cout << "\n}\n";
+            exit(20);
+        }
+    }
+    // combine small bags
+    Preprocessor::preprocessDecomp(&treeDecomp.bags[0], combineWidth);
+
+    tdParser.iterateDecompPost(treeDecomp.bags[0]);
+    tdParser.postNumBags = treeDecomp.bags.size();
 
     time_parsing = getTime() - time_parsing;
 
@@ -211,7 +220,7 @@ int main(int argc, char *argv[]) {
             std::string kernelStr = GPUSATUtils::readFile(sourcePath);
             cl::Program::Sources sources(1, std::make_pair(kernelStr.c_str(), kernelStr.length()));
             program = cl::Program(context, sources);
-            program.build(devices);
+            program.build(devices, "-cl-no-signed-zeros -cl-fast-relaxed-math");
 
             const std::vector<size_t> binSizes = program.getInfo<CL_PROGRAM_BINARY_SIZES>();
             std::vector<char> binData((unsigned long long int) std::accumulate(binSizes.begin(), binSizes.end(), 0));
@@ -248,29 +257,26 @@ int main(int argc, char *argv[]) {
         switch (graph) {
             case PRIMAL:
                 sol = new Solver_Primal(context, queue, program, maxBag);
-                next.numSol = pow(2, next.variables.size());
                 next.variables.assign(treeDecomp.bags[0].variables.begin(),
                                       treeDecomp.bags[0].variables.begin() + std::min((cl_long) treeDecomp.bags[0].variables.size(), (cl_long) 12));
                 break;
-            case DUAL:
-                sol = new Solver_Dual(context, queue, program, maxBag);
-                next.numSol = pow(2, next.variables.size());
-                next.variables.assign(treeDecomp.bags[0].variables.begin(),
-                                      treeDecomp.bags[0].variables.begin() + std::min((cl_long) treeDecomp.bags[0].variables.size(), (cl_long) 12));
-                break;
-            case INCIDENCE:
-                sol = new Solver_Incidence(context, queue, program, maxBag);
-                std::vector<cl_long> *vars = new std::vector<cl_long>;
-                for (int i = 0; i < treeDecomp.bags[0].variables.size(); ++i) {
-                    if (treeDecomp.bags[0].variables[i] <= satFormula.numVars) {
-                        (*vars).push_back(treeDecomp.bags[0].variables[i]);
-                    } else {
-                        break;
+                /*case DUAL:
+                    sol = new Solver_Dual(context, queue, program, maxBag);
+                    next.variables.assign(treeDecomp.bags[0].variables.begin(),
+                                          treeDecomp.bags[0].variables.begin() + std::min((cl_long) treeDecomp.bags[0].variables.size(), (cl_long) 12));
+                    break;
+                case INCIDENCE:
+                    sol = new Solver_Incidence(context, queue, program, maxBag);
+                    std::vector<cl_long> *vars = new std::vector<cl_long>;
+                    for (int i = 0; i < treeDecomp.bags[0].variables.size(); ++i) {
+                        if (treeDecomp.bags[0].variables[i] <= satFormula.numVars) {
+                            (*vars).push_back(treeDecomp.bags[0].variables[i]);
+                        } else {
+                            break;
+                        }
                     }
-                }
-                next.numSol = pow(2, next.variables.size());
-                next.variables = *vars;
-                break;
+                    next.variables = *vars;
+                    break;*/
         }
         long long int time_solving = getTime();
         (*sol).solveProblem(treeDecomp, satFormula, treeDecomp.bags[0], next);
@@ -282,22 +288,18 @@ int main(int argc, char *argv[]) {
         if ((*sol).isSat > 0) {
             cl_long bagSizeNode = static_cast<cl_long>(pow(2, std::min((cl_long) maxBag, (cl_long) treeDecomp.bags[0].variables.size())));
             if (graph == DUAL) {
-                for (cl_long a = 0; a < treeDecomp.bags[0].numSol / bagSizeNode; a++) {
-                    if (treeDecomp.bags[0].solution[a] == nullptr) {
-                        continue;
-                    }
-                    for (cl_long i = 0; i < bagSizeNode; i++) {
+                for (cl_long a = 0; a < treeDecomp.bags[0].solution.size(); a++) {
+                    for (cl_long i = 0; i < treeDecomp.bags[0].solution[a].size(); i++) {
                         sols = sols + ((popcount(i + a * bagSizeNode) % 2) == 1 ? -treeDecomp.bags[0].solution[a][i] : treeDecomp.bags[0].solution[a][i]);
                     }
+                    treeDecomp.bags[0].solution[a].resize(0);
                 }
             } else {
-                for (cl_long a = 0; a < treeDecomp.bags[0].numSol / bagSizeNode; a++) {
-                    if (treeDecomp.bags[0].solution[a] == nullptr) {
-                        continue;
-                    }
-                    for (cl_long i = 0; i < bagSizeNode; i++) {
+                for (cl_long a = 0; a < treeDecomp.bags[0].solution.size(); a++) {
+                    for (cl_long i = 0; i < treeDecomp.bags[0].solution[a].size(); i++) {
                         sols = sols + treeDecomp.bags[0].solution[a][i];
                     }
+                    treeDecomp.bags[0].solution[a].resize(0);
                 }
             }
             if (!weighted && graph != DUAL) {
@@ -339,9 +341,18 @@ int main(int argc, char *argv[]) {
         std::cout << "\n    }";
         std::cout << "\n    ,\"Statistics\":{";
         std::cout << "\n        \"Num Join\": " << sol->numJoin;
-        std::cout << "\n        ,\"Num Forget\": " << sol->numIntroduceForget;
+        std::cout << "\n        ,\"Num Introduce Forget\": " << sol->numIntroduceForget;
+        std::cout << "\n        ,\"pre Width\": " << tdParser.preWidth;
+        std::cout << "\n        ,\"post Width\": " << tdParser.postWidth;
+        std::cout << "\n        ,\"pre Cut Set Size\": " << tdParser.preCut;
+        std::cout << "\n        ,\"post Cut Set Size\": " << tdParser.postCut;
+        std::cout << "\n        ,\"pre Join Size\": " << tdParser.preJoinSize;
+        std::cout << "\n        ,\"post Join Size\": " << tdParser.postJoinSize;
+        std::cout << "\n        ,\"pre Bags\": " << tdParser.preNumBags;
+        std::cout << "\n        ,\"post Bags\": " << tdParser.postNumBags;
+        std::cout << "\n        ,\"max Table Size\": " << sol->maxTableSize;
         std::cout << "\n    }";
-        std::cout << "\n}";
+        std::cout << "\n}\n";
         std::cout.flush();
         if (sols > 0) {
             exit(10);

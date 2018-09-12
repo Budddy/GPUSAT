@@ -20,6 +20,7 @@ namespace gpusat {
         cl_long isSat = 1;
         cl_long numJoin = 0;
         cl_long numIntroduceForget = 0;
+        cl_long maxTableSize = 0;
 
         Solver(cl::Context &context_, cl::CommandQueue &queue_, cl::Program &program_, int width) : context(context_), queue(queue_), program(program_), maxWidth(width) {}
 
