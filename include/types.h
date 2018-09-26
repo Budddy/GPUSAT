@@ -55,7 +55,9 @@ namespace gpusat {
         cl_long id = 0;
         std::vector<cl_long> variables;
         std::vector<bagType *> edges;
-        std::vector<std::vector<cl_double>> solution;
+        std::vector<cl_long> sizes;
+        cl_long bags = 0;
+        cl_double **solution;
     };
 
     /// type for saving a tree decomposition

@@ -68,6 +68,8 @@ int main(int argc, char *argv[]) {
         sat.sputn("\n", 1);
     }
 
+    std::cout << "{\n";
+
     long long int time_parsing = getTime();
     CNFParser cnfParser(weighted);
     TDParser tdParser(combineWidth, factR, maxBag);
@@ -85,6 +87,11 @@ int main(int argc, char *argv[]) {
     satformulaType satFormula = cnfParser.parseSatFormula(sat.str());
     //parse the tree decomposition
     treedecType treeDecomp = tdParser.parseTreeDecomp(treeD.str(), satFormula, graph);
+
+    std::cout << "    \"pre Width\": " << tdParser.preWidth;
+    std::cout << "\n    ,\"pre Cut Set Size\": " << tdParser.preCut;
+    std::cout << "\n    ,\"pre Join Size\": " << tdParser.preJoinSize;
+    std::cout << "\n    ,\"pre Bags\": " << tdParser.preNumBags;
 
     if (satFormula.clauses.size() == satFormula.numVars && satFormula.numVars == treeDecomp.numVars) {
         if (isPrimalGraph(&satFormula, &treeDecomp)) {
@@ -110,7 +117,7 @@ int main(int argc, char *argv[]) {
     if (!factR) {
         Preprocessor::preprocessFacts(treeDecomp, satFormula, graph, tdParser.defaultWeight);
         if (satFormula.unsat) {
-            std::cout << "{\n    \"Model Count\": " << 0;
+            std::cout << "\n    ,\"Model Count\": " << 0;
             time_total = getTime() - time_total;
             std::cout << "\n    ,\"Time\":{";
             std::cout << "\n        \"Solving\": " << 0;
@@ -137,6 +144,11 @@ int main(int argc, char *argv[]) {
     tdParser.postNumBags = treeDecomp.bags.size();
 
     time_parsing = getTime() - time_parsing;
+
+    std::cout << "\n    ,\"post Width\": " << tdParser.postWidth;
+    std::cout << "\n    ,\"post Cut Set Size\": " << tdParser.postCut;
+    std::cout << "\n    ,\"post Join Size\": " << tdParser.postJoinSize;
+    std::cout << "\n    ,\"post Bags\": " << tdParser.postNumBags;
 
     std::vector<cl::Platform> platforms;
     cl::Context context;
@@ -202,42 +214,42 @@ int main(int argc, char *argv[]) {
 #ifndef DEBUG
         if (stat(binPath.c_str(), &buffer) != 0) {
 #endif
-            //create kernel binary if it doesn't exist
-            std::string sourcePath;
+        //create kernel binary if it doesn't exist
+        std::string sourcePath;
 
-            switch (graph) {
-                case DUAL:
-                    sourcePath = kernelPath + "SAT_d_dual.cl";
-                    break;
-                case PRIMAL:
-                    sourcePath = kernelPath + "SAT_d_primal.cl";
-                    break;
-                case INCIDENCE:
-                    sourcePath = kernelPath + "SAT_d_inci.cl";
-                    break;
-            }
-            // read source file
-            std::string kernelStr = GPUSATUtils::readFile(sourcePath);
-            cl::Program::Sources sources(1, std::make_pair(kernelStr.c_str(), kernelStr.length()));
-            program = cl::Program(context, sources);
-            program.build(devices, "-cl-no-signed-zeros -cl-fast-relaxed-math");
+        switch (graph) {
+            case DUAL:
+                sourcePath = kernelPath + "SAT_d_dual.cl";
+                break;
+            case PRIMAL:
+                sourcePath = kernelPath + "SAT_d_primal.cl";
+                break;
+            case INCIDENCE:
+                sourcePath = kernelPath + "SAT_d_inci.cl";
+                break;
+        }
+        // read source file
+        std::string kernelStr = GPUSATUtils::readFile(sourcePath);
+        cl::Program::Sources sources(1, std::make_pair(kernelStr.c_str(), kernelStr.length()));
+        program = cl::Program(context, sources);
+        program.build(devices);
 
-            const std::vector<size_t> binSizes = program.getInfo<CL_PROGRAM_BINARY_SIZES>();
-            std::vector<char> binData((unsigned long long int) std::accumulate(binSizes.begin(), binSizes.end(), 0));
-            char *binChunk = &binData[0];
+        const std::vector<size_t> binSizes = program.getInfo<CL_PROGRAM_BINARY_SIZES>();
+        std::vector<char> binData((unsigned long long int) std::accumulate(binSizes.begin(), binSizes.end(), 0));
+        char *binChunk = &binData[0];
 
-            std::vector<char *> binaries;
-            for (const size_t &binSize : binSizes) {
-                binaries.push_back(binChunk);
-                binChunk += binSize;
-            }
+        std::vector<char *> binaries;
+        for (const size_t &binSize : binSizes) {
+            binaries.push_back(binChunk);
+            binChunk += binSize;
+        }
 
-            // write binaries
-            program.getInfo(CL_PROGRAM_BINARIES, &binaries[0]);
-            std::ofstream binaryfile(binPath.c_str(), std::ios::binary);
-            for (unsigned int i = 0; i < binaries.size(); ++i)
-                binaryfile.write(binaries[i], binSizes[i]);
-            binaryfile.close();
+        // write binaries
+        program.getInfo(CL_PROGRAM_BINARIES, &binaries[0]);
+        std::ofstream binaryfile(binPath.c_str(), std::ios::binary);
+        for (unsigned int i = 0; i < binaries.size(); ++i)
+            binaryfile.write(binaries[i], binSizes[i]);
+        binaryfile.close();
 #ifndef DEBUG
         } else {
             //load kernel binary
@@ -282,24 +294,29 @@ int main(int argc, char *argv[]) {
         (*sol).solveProblem(treeDecomp, satFormula, treeDecomp.bags[0], next);
         time_solving = getTime() - time_solving;
 
+        std::cout << "\n    ,\"Num Join\": " << sol->numJoin;
+        std::cout << "\n    ,\"Num Introduce Forget\": " << sol->numIntroduceForget;
+        std::cout << "\n    ,\"max Table Size\": " << sol->maxTableSize;
+
         //sum up last node solutions
         long long int time_model = getTime();
         boost::multiprecision::cpp_bin_float_100 sols = 0.0;
         if ((*sol).isSat > 0) {
             cl_long bagSizeNode = static_cast<cl_long>(pow(2, std::min((cl_long) maxBag, (cl_long) treeDecomp.bags[0].variables.size())));
             if (graph == DUAL) {
-                for (cl_long a = 0; a < treeDecomp.bags[0].solution.size(); a++) {
-                    for (cl_long i = 0; i < treeDecomp.bags[0].solution[a].size(); i++) {
+                for (cl_long a = 0; a < treeDecomp.bags[0].bags; a++) {
+                    for (cl_long i = 0; i < treeDecomp.bags[0].sizes[a]; i++) {
                         sols = sols + ((popcount(i + a * bagSizeNode) % 2) == 1 ? -treeDecomp.bags[0].solution[a][i] : treeDecomp.bags[0].solution[a][i]);
                     }
-                    treeDecomp.bags[0].solution[a].resize(0);
+                    if (treeDecomp.bags[0].solution[a] != NULL)
+                        delete[] treeDecomp.bags[0].solution[a];
                 }
             } else {
-                for (cl_long a = 0; a < treeDecomp.bags[0].solution.size(); a++) {
-                    for (cl_long i = 0; i < treeDecomp.bags[0].solution[a].size(); i++) {
-                        sols = sols + treeDecomp.bags[0].solution[a][i];
-                    }
-                    treeDecomp.bags[0].solution[a].resize(0);
+                for (cl_long a = 0; a < treeDecomp.bags[0].bags; a++) {
+                    if (treeDecomp.bags[0].solution[a] != NULL)
+                        for (cl_long i = 0; i < treeDecomp.bags[0].sizes[a]; i++) {
+                            sols = sols + treeDecomp.bags[0].solution[a][i];
+                        }
                 }
             }
             if (!weighted && graph != DUAL) {
@@ -323,10 +340,10 @@ int main(int argc, char *argv[]) {
             }
             char buf[128];
 
-            std::cout << std::setprecision(20) << "{\n    \"Model Count\": " << sols;
+            std::cout << std::setprecision(20) << "\n    ,\"Model Count\": " << sols;
 
         } else {
-            std::cout << "{\n    \"Model Count\": " << 0;
+            std::cout << "\n    ,\"Model Count\": " << 0;
         }
         time_model = getTime() - time_model;
         time_total = getTime() - time_total;
@@ -338,19 +355,6 @@ int main(int argc, char *argv[]) {
         std::cout << "\n        ,\"Generate_Model\": " << ((float) time_model) / 1000;
         std::cout << "\n        ,\"Init_OpenCL\": " << ((float) time_init_opencl) / 1000;
         std::cout << "\n        ,\"Total\": " << ((float) time_total) / 1000;
-        std::cout << "\n    }";
-        std::cout << "\n    ,\"Statistics\":{";
-        std::cout << "\n        \"Num Join\": " << sol->numJoin;
-        std::cout << "\n        ,\"Num Introduce Forget\": " << sol->numIntroduceForget;
-        std::cout << "\n        ,\"pre Width\": " << tdParser.preWidth;
-        std::cout << "\n        ,\"post Width\": " << tdParser.postWidth;
-        std::cout << "\n        ,\"pre Cut Set Size\": " << tdParser.preCut;
-        std::cout << "\n        ,\"post Cut Set Size\": " << tdParser.postCut;
-        std::cout << "\n        ,\"pre Join Size\": " << tdParser.preJoinSize;
-        std::cout << "\n        ,\"post Join Size\": " << tdParser.postJoinSize;
-        std::cout << "\n        ,\"pre Bags\": " << tdParser.preNumBags;
-        std::cout << "\n        ,\"post Bags\": " << tdParser.postNumBags;
-        std::cout << "\n        ,\"max Table Size\": " << sol->maxTableSize;
         std::cout << "\n    }";
         std::cout << "\n}\n";
         std::cout.flush();

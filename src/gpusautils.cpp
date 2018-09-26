@@ -13,10 +13,10 @@ namespace gpusat {
             std::cout << bag.variables[j] << " ";
         }
         std::cout << "\nsolutions: \n";
-        for (int i = 0; i < bag.solution.size(); i++) {
-            for (int a = 0; a < bag.solution[i].size(); a++) {
-                std::cout << i * bag.solution[i].size() + a << ": ";
-                std::cout << bag.solution[i][a] << "\n";
+        for (int i = 0; i < bag.bags; i++) {
+            for (int a = 0; a < bag.sizes[i]; a++) {
+                std::cout << i * bag.sizes[i] + a << ": ";
+                std::cout << (bag.solution[i] != nullptr ? bag.solution[i][a] : 0) << "\n";
             }
         }
     }

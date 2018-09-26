@@ -146,7 +146,7 @@ int checkBag(__global long *clauses, __global long *numVarsC, long numclauses, l
  */
 __kernel void solveJoin(__global stype *solutions, __global stype *edge1, __global stype *edge2, __global long *variables, __global long *edgeVariables1,
                         __global long *edgeVariables2, long numV, long numVE1, long numVE2, long minId1, long maxId1, long minId2,
-                        long maxId2, long startIDNode, long startIDEdge1, long startIDEdge2, __global double *weights, __global int *sols) {
+                        long maxId2, long startIDNode, long startIDEdge1, long startIDEdge2, __global double *weights, __global long *sols) {
     long id = get_global_id(0);
     stype tmp = -1, tmp_ = -1;
     double weight = 1;
@@ -270,7 +270,7 @@ stype solveIntroduceF(__global long *clauses, __global long *numVarsC, long numc
 __kernel void solveIntroduceForget(__global stype *solsF, __global long *varsF, __global stype *solsE,
                                    long numVE, __global long *varsE, long combinations, long numVF,
                                    long minIdE, long maxIdE, long startIDF,
-                                   long startIDE, __global int *sols,
+                                   long startIDE, __global long *sols,
                                    long numVI, __global long *varsI,
                                    __global long *clauses, __global long *numVarsC, long numclauses, __global double *weights) {
     long id = get_global_id(0);
